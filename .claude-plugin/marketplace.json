@@ -1,0 +1,19 @@
+{
+  "name": "amane-media-tools",
+  "owner": {
+    "name": "amane",
+    "url": "https://github.com/isaka1022"
+  },
+  "metadata": {
+    "description": "Review tooling for AI-generated media, modeled on film and music production workflows",
+    "version": "1.0.0"
+  },
+  "plugins": [
+    {
+      "name": "media-preview",
+      "description": "Turns generated video, audio, and images into a screening page with a review brief: scoped asks, declared work-in-progress, timecode-anchored comments, OK/retake/hold verdicts, and automated QC (duration, resolution, EBU R128 loudness, true peak, missing audio track). Runs fully local with no upload and no size limit.",
+      "source": "./",
+      "skills": ["./skills/media-preview"]
+    }
+  ]
+}
