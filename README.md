@@ -97,6 +97,21 @@ Only one stream plays at a time, so a screening never becomes overlapping audio.
 - (no notes)
 ```
 
+## Privacy
+
+Everything stays on your machine. Nothing is uploaded, and the page contacts no network at all — no CDN, no fonts, no analytics.
+
+Two consequences worth knowing:
+
+- **The generated HTML embeds absolute local paths** and points at your media through `file://` URLs. It is a local artifact. Sending the HTML to someone else leaks your directory layout, and the media will not play on their machine anyway
+- **Verdicts and notes live in `localStorage`** on the page's own origin, so they never leave the browser. Clearing site data drops them
+
+## Security
+
+- Filenames and every brief field are HTML-escaped before rendering, and values interpolated into the page's inline `<script>` have `<` escaped so a `</script>` in a title cannot break out
+- Notes are inserted with `textContent`, never `innerHTML`
+- `ffprobe` and `ffmpeg` are invoked through `execFile` with an argument array, so no filename reaches a shell
+
 ## License
 
 MIT

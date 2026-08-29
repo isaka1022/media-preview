@@ -15,6 +15,7 @@ const AUDIO_EXT = new Set(['.mp3', '.wav', '.m4a', '.aac', '.flac', '.ogg', '.op
 const IMAGE_EXT = new Set(['.png', '.jpg', '.jpeg', '.gif', '.webp', '.avif'])
 const SKIP_DIRS = new Set(['node_modules', '.git', '.next', 'dist', 'build', '.venv', 'venv', '__pycache__', 'Pods'])
 const MAX_DEPTH = 4
+const PROBE_CONCURRENCY = 4
 const DEFAULT_OUT_DIR = path.join(os.homedir(), '.claude', 'previews')
 
 // Streaming platform norms. Drift beyond these gets normalized on playback, or clips.
@@ -127,6 +128,21 @@ async function measureLoudness(file) {
   }
 }
 
+// Spawning ffprobe/ffmpeg once per file at full fan-out melts a machine on a large directory.
+async function mapLimit(items, limit, fn) {
+  const out = new Array(items.length)
+  let next = 0
+  await Promise.all(
+    Array.from({ length: Math.min(limit, items.length) }, async () => {
+      while (next < items.length) {
+        const i = next++
+        out[i] = await fn(items[i])
+      }
+    })
+  )
+  return out
+}
+
 function openInBrowser(file) {
   if (process.platform === 'darwin') return run('open', [file])
   if (process.platform === 'win32') return run('cmd', ['/c', 'start', '', file])
@@ -157,6 +173,9 @@ function fmtTime(ms) {
 
 const esc = (s) =>
   String(s).replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/"/g, '&quot;')
+
+// JSON.stringify leaves `<` intact, so a value containing `</script>` would break out of the block.
+const jsonForScript = (v) => JSON.stringify(v).replace(/</g, '\\u003c')
 
 function fileUrl(p) {
   return `file://${p.split('/').map(encodeURIComponent).join('/')}`
@@ -434,9 +453,9 @@ ${items.length ? items.map(renderCard).join('\n') : '<p class="empty">No media f
 </main>
 <div class="toast" id="toast"></div>
 <script>
-  const REVIEW_TITLE = ${JSON.stringify(title)};
-  const REVIEW_VERSION = ${JSON.stringify(opts.version ?? '')};
-  const VERDICTS = ${JSON.stringify(VERDICTS)};
+  const REVIEW_TITLE = ${jsonForScript(title)};
+  const REVIEW_VERSION = ${jsonForScript(opts.version ?? '')};
+  const VERDICTS = ${jsonForScript(VERDICTS)};
   const cards = [...document.querySelectorAll('.card')];
   const toastEl = document.getElementById('toast');
   const progressEl = document.getElementById('progress');
@@ -650,13 +669,15 @@ async function main() {
   }
 
   items.sort((a, b) => b.mtime - a.mtime)
-  items = await Promise.all(
-    items.map(async (i) => ({ ...i, kind: kindOf(i.file), ...(await probe(i.file)) }))
-  )
+  items = await mapLimit(items, PROBE_CONCURRENCY, async (i) => ({
+    ...i,
+    kind: kindOf(i.file),
+    ...(await probe(i.file)),
+  }))
 
   if (opts.loudness) {
-    items = await Promise.all(
-      items.map(async (i) => (i.kind === 'image' ? i : { ...i, loudness: await measureLoudness(i.file) }))
+    items = await mapLimit(items, PROBE_CONCURRENCY, async (i) =>
+      i.kind === 'image' ? i : { ...i, loudness: await measureLoudness(i.file) }
     )
   }
 
