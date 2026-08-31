@@ -1,6 +1,6 @@
 ---
 name: media-preview
-description: Turn generated video, audio, and images into a screening page carrying a review brief, then hand back a link. Follows how film and music post-production actually request approval - state the version and stage, scope the ask to a few points, declare what is still WIP, anchor every note to a timecode, mark OK/Retake/Hold, and let automated QC report duration, resolution, loudness, true peak, and missing audio before a human looks. Use right after generating or exporting media, or when asked to "show me a preview", "let me review this", "screening", "check this take", "プレビュー見せて", "試写", "テイクを見たい", "確認したい", or "/media-preview". Do not use for a single still image, or when the user only wants the file path.
+description: Turn generated video, audio, and image sets into a local screening page with a scoped review brief, timecoded notes, OK/Retake/Hold verdicts, and automated media QC. Use after generating or exporting media, or when asked for a preview, screening, take review, 「プレビュー見せて」, or 「試写」. Do not use for a single still image or when the user only wants its path.
 allowed-tools: Bash, Read
 ---
 
@@ -53,8 +53,13 @@ Always pass `--version "v3 rough cut"`. The reviewer uses this to decide **what 
 
 ## Phase 2: Run
 
+Use the CLI bundled with this skill. Resolve `scripts/preview-media.mjs` relative
+to this `SKILL.md`; do not assume the current working directory. Claude Code
+plugin installs may continue to use the compatibility entrypoint at
+`${CLAUDE_PLUGIN_ROOT}/scripts/preview-media.mjs`.
+
 ```bash
-node "${CLAUDE_PLUGIN_ROOT}/scripts/preview-media.mjs" <paths...> \
+node "<skill-directory>/scripts/preview-media.mjs" <paths...> \
   --title "Nachi Falls MV — screening" \
   --version "v3 rough cut" \
   --ask "Does the retake at 2:51 read as a deliberate quality call?" \
@@ -81,7 +86,10 @@ Automated QC (duration, resolution, fps, loudness, true peak, missing audio trac
 
 ## Phase 3: What to write in chat
 
-Paste the `file://` URL from the first output line, then restate the brief. Never post the bare URL alone.
+The CLI opens the page in the user's browser. Paste the `file://` URL from the
+first output line, then restate the brief. Never post the bare URL alone. If the
+agent environment requires approval to launch a browser, request it at the
+moment the page is ready to open.
 
 ```
 Review request — v3 rough cut / 2 files
