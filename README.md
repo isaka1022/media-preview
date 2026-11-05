@@ -61,6 +61,7 @@ node scripts/preview-media.mjs ./renders \
 | `--spec` / `--due` / `--changes` | Spec / deadline / what changed since last version |
 | `--loudness` | Measure EBU R128. Pass it whenever sound is under review |
 | `--since <minutes>` | Only files touched in the last N minutes |
+| `--serve` / `--port N` | Serve page and media over `http://127.0.0.1` instead of `file://` (needed in embedded browsers such as the Claude desktop app) |
 | `--title` / `--out` / `--no-open` | Heading / output path / skip opening the browser |
 
 Paths may be files or directories. Directories recurse 4 levels, skipping `node_modules`, `.git`, `dist`, and dotfiles.
@@ -103,7 +104,7 @@ Everything stays on your machine. Nothing is uploaded, and the page contacts no 
 
 Two consequences worth knowing:
 
-- **The generated HTML embeds absolute local paths** and points at your media through `file://` URLs. It is a local artifact. Sending the HTML to someone else leaks your directory layout, and the media will not play on their machine anyway
+- **The generated HTML embeds absolute local paths** and points at your media through `file://` URLs. It is a local artifact. Sending the HTML to someone else leaks your directory layout, and the media will not play on their machine anyway. With `--serve` the page uses `/media/<n>/…` URLs and the server binds to `127.0.0.1` only, serving just the listed files
 - **Verdicts and notes live in `localStorage`** on the page's own origin, so they never leave the browser. Clearing site data drops them
 
 ## Security

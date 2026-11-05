@@ -1,10 +1,12 @@
 #!/usr/bin/env node
 // Turns generated media into a screening page carrying a review brief.
-// Usage: preview-media.mjs [paths...] [--ask "..."]... [--wip "..."]... [--loudness] ...
+// Usage: preview-media.mjs [paths...] [--ask "..."]... [--wip "..."]... [--loudness] [--serve [--port N]] ...
 
 import { execFile } from 'node:child_process'
 import { promisify } from 'node:util'
 import { readdir, stat, mkdir, writeFile } from 'node:fs/promises'
+import { createReadStream } from 'node:fs'
+import http from 'node:http'
 import path from 'node:path'
 import os from 'node:os'
 
@@ -25,10 +27,16 @@ const TRUE_PEAK_CEILING = -1
 
 const VERDICTS = ['OK', 'Retake', 'Hold']
 
+const MIME = {
+  '.mp4': 'video/mp4', '.mov': 'video/quicktime', '.webm': 'video/webm', '.m4v': 'video/mp4', '.mkv': 'video/x-matroska',
+  '.mp3': 'audio/mpeg', '.wav': 'audio/wav', '.m4a': 'audio/mp4', '.aac': 'audio/aac', '.flac': 'audio/flac', '.ogg': 'audio/ogg', '.opus': 'audio/ogg',
+  '.png': 'image/png', '.jpg': 'image/jpeg', '.jpeg': 'image/jpeg', '.gif': 'image/gif', '.webp': 'image/webp', '.avif': 'image/avif',
+}
+
 function parseArgs(argv) {
   const opts = {
     targets: [], title: null, version: null, due: null, spec: null, changes: null,
-    asks: [], wips: [], sinceMin: null, out: null, open: true, loudness: false,
+    asks: [], wips: [], sinceMin: null, out: null, open: true, loudness: false, serve: false, port: 0,
   }
   const multi = { '--ask': 'asks', '--wip': 'wips' }
   const single = { '--title': 'title', '--version': 'version', '--due': 'due', '--spec': 'spec', '--changes': 'changes', '--out': 'out' }
@@ -39,6 +47,8 @@ function parseArgs(argv) {
     else if (a === '--since') opts.sinceMin = Number(argv[++i])
     else if (a === '--loudness') opts.loudness = true
     else if (a === '--no-open') opts.open = false
+    else if (a === '--serve') opts.serve = true
+    else if (a === '--port') opts.port = Number(argv[++i])
     else opts.targets.push(a)
   }
   if (opts.targets.length === 0) opts.targets.push(process.cwd())
@@ -227,7 +237,7 @@ function specChips(item) {
 }
 
 function mediaTag(item) {
-  const url = esc(fileUrl(item.file))
+  const url = esc(item.url)
   if (item.kind === 'video') return `<video src="${url}" controls preload="metadata" playsinline></video>`
   if (item.kind === 'audio') return `<audio src="${url}" controls preload="metadata"></audio>`
   return `<img src="${url}" alt="${esc(path.basename(item.file))}" loading="lazy">`
@@ -246,6 +256,7 @@ function renderCard(item, index) {
     <span class="verdict-tag"></span>
   </header>
   <div class="media">${mediaTag(item)}</div>
+  <p class="media-err" hidden></p>
   <div class="chips">${chips}</div>
   <div class="verdict">
     ${VERDICTS.map((v) => `<button class="v-btn" data-verdict="${v}">${v}</button>`).join('\n    ')}
@@ -381,6 +392,7 @@ function renderHtml(opts, items, generatedAt) {
   .media video, .media img { width: 100%; display: block; max-height: 58vh; object-fit: contain; }
   .media audio { width: 100%; display: block; padding: 10px; }
 
+  .media-err { margin: 8px 0 0; padding: 6px 10px; border-radius: 6px; border: 1px solid var(--retake); color: var(--retake); font-size: 12px; }
   .chips { display: flex; flex-wrap: wrap; gap: 6px; margin: 10px 0; }
   .chip {
     font-size: 11px; padding: 2px 8px; border-radius: 4px; background: #0d0f12;
@@ -616,6 +628,16 @@ ${items.length ? items.map(renderCard).join('\n') : '<p class="empty">No media f
     }
   });
 
+  // A failed load is otherwise a silent player. file:// media outside the page's folder is blocked by some embedded browsers.
+  document.querySelectorAll('.media video, .media audio, .media img').forEach((m) => {
+    m.addEventListener('error', () => {
+      const box = m.closest('.card').querySelector('.media-err');
+      const code = m.error ? ' (MediaError ' + m.error.code + ')' : '';
+      box.textContent = 'Could not load this file' + code + '. If this page was opened as file://, rerun with --serve.';
+      box.hidden = false;
+    });
+  });
+
   // One stream at a time, so a screening never turns into overlapping audio.
   document.querySelectorAll('video, audio').forEach((m) => {
     m.addEventListener('play', () => {
@@ -656,6 +678,48 @@ ${items.length ? items.map(renderCard).join('\n') : '<p class="empty">No media f
 </html>`
 }
 
+// Serves only the page and the listed files on loopback. Range support is what lets the player seek.
+function serve(html, items, port) {
+  const server = http.createServer(async (req, res) => {
+    const m = req.url.match(/^\/media\/(\d+)\//)
+    const item = m && items[Number(m[1])]
+    if (req.url === '/' || req.url === '/index.html') {
+      res.writeHead(200, { 'Content-Type': 'text/html; charset=utf-8', 'Cache-Control': 'no-store' })
+      return res.end(html)
+    }
+    if (!item) {
+      res.writeHead(404)
+      return res.end()
+    }
+    let size
+    try {
+      size = (await stat(item.file)).size
+    } catch {
+      res.writeHead(404)
+      return res.end()
+    }
+    const headers = { 'Content-Type': MIME[path.extname(item.file).toLowerCase()] ?? 'application/octet-stream', 'Accept-Ranges': 'bytes' }
+    const r = /^bytes=(\d*)-(\d*)$/.exec(req.headers.range ?? '')
+    if (!r || (r[1] === '' && r[2] === '')) {
+      res.writeHead(200, { ...headers, 'Content-Length': size })
+      return req.method === 'HEAD' ? res.end() : createReadStream(item.file).pipe(res)
+    }
+    let start = r[1] === '' ? size - Number(r[2]) : Number(r[1])
+    let end = r[1] === '' || r[2] === '' ? size - 1 : Math.min(Number(r[2]), size - 1)
+    start = Math.max(0, start)
+    if (start > end || start >= size) {
+      res.writeHead(416, { 'Content-Range': `bytes */${size}` })
+      return res.end()
+    }
+    res.writeHead(206, { ...headers, 'Content-Range': `bytes ${start}-${end}/${size}`, 'Content-Length': end - start + 1 })
+    return req.method === 'HEAD' ? res.end() : createReadStream(item.file, { start, end }).pipe(res)
+  })
+  return new Promise((resolve, reject) => {
+    server.once('error', reject)
+    server.listen(port, '127.0.0.1', () => resolve(`http://127.0.0.1:${server.address().port}/`))
+  })
+}
+
 async function main() {
   const opts = parseArgs(process.argv.slice(2))
 
@@ -675,6 +739,8 @@ async function main() {
     ...(await probe(i.file)),
   }))
 
+  items = items.map((i, n) => ({ ...i, url: opts.serve ? `/media/${n}/${encodeURIComponent(path.basename(i.file))}` : fileUrl(i.file) }))
+
   if (opts.loudness) {
     items = await mapLimit(items, PROBE_CONCURRENCY, async (i) =>
       i.kind === 'image' ? i : { ...i, loudness: await measureLoudness(i.file) }
@@ -684,13 +750,15 @@ async function main() {
   const out =
     opts.out ?? path.join(DEFAULT_OUT_DIR, `preview-${new Date().toISOString().replace(/[:.]/g, '-')}.html`)
 
+  const html = renderHtml(opts, items, fmtTime(Date.now()))
   await mkdir(path.dirname(out), { recursive: true })
-  await writeFile(out, renderHtml(opts, items, fmtTime(Date.now())), 'utf8')
+  await writeFile(out, html, 'utf8')
 
-  if (opts.open) await openInBrowser(out).catch(() => {})
+  const pageUrl = opts.serve ? await serve(html, items, opts.port) : fileUrl(path.resolve(out))
+  if (opts.open) await openInBrowser(pageUrl).catch(() => {})
 
   const by = (k) => items.filter((i) => i.kind === k).length
-  console.log(fileUrl(path.resolve(out)))
+  console.log(pageUrl)
   console.log(`${items.length} files (${by('video')} video / ${by('audio')} audio / ${by('image')} image)`)
   if (!opts.asks.length) console.log('warning: no --ask given. Scope the review before sending it.')
 }
