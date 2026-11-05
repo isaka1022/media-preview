@@ -78,6 +78,7 @@ node "<skill-directory>/scripts/preview-media.mjs" <paths...> \
 | `--spec` / `--due` / `--changes` | Spec / deadline / what changed since last version |
 | `--loudness` | Measure EBU R128 against -14 LUFS / -1 dBTP. **Always pass it when sound is under review** |
 | `--since <minutes>` | Only files touched in the last N minutes. Near-required when pointing at a whole working directory |
+| `--serve` / `--port N` | Serve the page and media from `http://127.0.0.1` (free port unless `--port`) instead of `file://`. **Use it in the Claude desktop app and any embedded browser**: they block `file://` media outside the session folders, so clicks play nothing. Run it in the background; it keeps serving until stopped |
 | `--title` / `--out` / `--no-open` | Heading / output path / skip opening the browser (verification only) |
 
 Paths may be files or directories. Directories recurse 4 levels, skipping `node_modules`, `.git`, `dist`, and dotfiles. Handles video `mp4/mov/webm/m4v/mkv`, audio `mp3/wav/m4a/aac/flac/ogg/opus`, images `png/jpg/jpeg/gif/webp/avif`.
@@ -86,10 +87,11 @@ Automated QC (duration, resolution, fps, loudness, true peak, missing audio trac
 
 ## Phase 3: What to write in chat
 
-The CLI opens the page in the user's browser. Paste the `file://` URL from the
-first output line, then restate the brief. Never post the bare URL alone. If the
-agent environment requires approval to launch a browser, request it at the
-moment the page is ready to open.
+The CLI opens the page in the user's browser. Paste the URL from the first
+output line (`http://127.0.0.1:…/` with `--serve`, otherwise `file://`), then
+restate the brief. Never post the bare URL alone. If the agent environment
+requires approval to launch a browser, request it at the moment the page is
+ready to open.
 
 ```
 Review request — v3 rough cut / 2 files
@@ -143,4 +145,5 @@ How to act on it:
 - **No loudness numbers** — `ffmpeg` is missing (`brew install ffmpeg`). Playback still works
 - **Metadata shows size only** — `ffprobe` cannot read that container. Safe to continue
 - **Browser does not open** — `open` / `xdg-open` / `start` failed. Pasting the URL in chat still works
+- **Clicking plays nothing / card shows "Could not load this file"** — the page was opened as `file://` in a browser that blocks local media. Rerun with `--serve` and open the printed http URL
 - **Media will not play** — codec the browser cannot decode (ProRes, some H.265). Build a proxy with `ffmpeg -i <in> -c:v libx264 -c:a aac <out>.mp4` and pass that instead
