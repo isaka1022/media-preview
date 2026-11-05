@@ -6,6 +6,7 @@ import { execFile } from 'node:child_process'
 import { promisify } from 'node:util'
 import { readdir, stat, mkdir, writeFile } from 'node:fs/promises'
 import { createReadStream } from 'node:fs'
+import { pipeline } from 'node:stream'
 import http from 'node:http'
 import path from 'node:path'
 import os from 'node:os'
@@ -633,7 +634,8 @@ ${items.length ? items.map(renderCard).join('\n') : '<p class="empty">No media f
     m.addEventListener('error', () => {
       const box = m.closest('.card').querySelector('.media-err');
       const code = m.error ? ' (MediaError ' + m.error.code + ')' : '';
-      box.textContent = 'Could not load this file' + code + '. If this page was opened as file://, rerun with --serve.';
+      box.textContent = 'Could not load this file' + code + '.'
+        + (location.protocol === 'file:' ? ' If this page was opened as file://, rerun with --serve.' : '');
       box.hidden = false;
     });
   });
@@ -681,9 +683,16 @@ ${items.length ? items.map(renderCard).join('\n') : '<p class="empty">No media f
 // Serves only the page and the listed files on loopback. Range support is what lets the player seek.
 function serve(html, items, port) {
   const server = http.createServer(async (req, res) => {
-    const m = req.url.match(/^\/media\/(\d+)\//)
+    // Reject other Host names so a DNS-rebound page cannot read the media.
+    const { port: actual } = server.address()
+    if (![`127.0.0.1:${actual}`, `localhost:${actual}`].includes(req.headers.host)) {
+      res.writeHead(403)
+      return res.end()
+    }
+    const pathname = new URL(req.url, 'http://127.0.0.1').pathname
+    const m = pathname.match(/^\/media\/(\d+)\//)
     const item = m && items[Number(m[1])]
-    if (req.url === '/' || req.url === '/index.html') {
+    if (pathname === '/' || pathname === '/index.html') {
       res.writeHead(200, { 'Content-Type': 'text/html; charset=utf-8', 'Cache-Control': 'no-store' })
       return res.end(html)
     }
@@ -702,7 +711,7 @@ function serve(html, items, port) {
     const r = /^bytes=(\d*)-(\d*)$/.exec(req.headers.range ?? '')
     if (!r || (r[1] === '' && r[2] === '')) {
       res.writeHead(200, { ...headers, 'Content-Length': size })
-      return req.method === 'HEAD' ? res.end() : createReadStream(item.file).pipe(res)
+      return req.method === 'HEAD' ? res.end() : pipeline(createReadStream(item.file), res, () => {})
     }
     let start = r[1] === '' ? size - Number(r[2]) : Number(r[1])
     let end = r[1] === '' || r[2] === '' ? size - 1 : Math.min(Number(r[2]), size - 1)
@@ -712,7 +721,7 @@ function serve(html, items, port) {
       return res.end()
     }
     res.writeHead(206, { ...headers, 'Content-Range': `bytes ${start}-${end}/${size}`, 'Content-Length': end - start + 1 })
-    return req.method === 'HEAD' ? res.end() : createReadStream(item.file, { start, end }).pipe(res)
+    return req.method === 'HEAD' ? res.end() : pipeline(createReadStream(item.file, { start, end }), res, () => {})
   })
   return new Promise((resolve, reject) => {
     server.once('error', reject)
@@ -739,8 +748,6 @@ async function main() {
     ...(await probe(i.file)),
   }))
 
-  items = items.map((i, n) => ({ ...i, url: opts.serve ? `/media/${n}/${encodeURIComponent(path.basename(i.file))}` : fileUrl(i.file) }))
-
   if (opts.loudness) {
     items = await mapLimit(items, PROBE_CONCURRENCY, async (i) =>
       i.kind === 'image' ? i : { ...i, loudness: await measureLoudness(i.file) }
@@ -750,11 +757,14 @@ async function main() {
   const out =
     opts.out ?? path.join(DEFAULT_OUT_DIR, `preview-${new Date().toISOString().replace(/[:.]/g, '-')}.html`)
 
-  const html = renderHtml(opts, items, fmtTime(Date.now()))
+  // The file on disk always points at file:// URLs so it still opens after the server is gone.
+  const generatedAt = fmtTime(Date.now())
+  const withUrl = (url) => items.map((i, n) => ({ ...i, url: url(i, n) }))
   await mkdir(path.dirname(out), { recursive: true })
-  await writeFile(out, html, 'utf8')
+  await writeFile(out, renderHtml(opts, withUrl((i) => fileUrl(i.file)), generatedAt), 'utf8')
 
-  const pageUrl = opts.serve ? await serve(html, items, opts.port) : fileUrl(path.resolve(out))
+  const served = withUrl((i, n) => `/media/${n}/${encodeURIComponent(path.basename(i.file))}`)
+  const pageUrl = opts.serve ? await serve(renderHtml(opts, served, generatedAt), served, opts.port) : fileUrl(path.resolve(out))
   if (opts.open) await openInBrowser(pageUrl).catch(() => {})
 
   const by = (k) => items.filter((i) => i.kind === k).length
