@@ -1,0 +1,4 @@
+interface:
+  display_name: "Media Preview"
+  short_description: "Review generated media in a local screening page"
+  default_prompt: "Use $media-preview to open the latest generated media for review."

@@ -1,6 +1,6 @@
 # media-preview
 
-A Claude Code skill that turns generated video, audio, and images into a **screening page** — one local HTML file with a review brief, timecoded notes, and automated QC. No upload, no size limit, no service to sign up for.
+A Claude Code and Codex skill that turns generated video, audio, and images into a **screening page** — one local HTML file with a review brief, timecoded notes, and automated QC. No upload, no size limit, no service to sign up for.
 
 ![Screenshot of the screening page](docs/screenshot.png)
 
@@ -26,10 +26,23 @@ Verdicts and notes persist in `localStorage`, so closing the tab loses nothing.
 
 ## Install
 
+### Claude Code
+
 ```
 /plugin marketplace add isaka1022/media-preview
 /plugin install media-preview@amane-media-tools
 ```
+
+### Codex
+
+Ask Codex to install the self-contained skill directory from this repository:
+
+```
+$skill-installer install https://github.com/isaka1022/media-preview/tree/main/skills/media-preview
+```
+
+Restart Codex after installation so the new skill is discovered. The skill can
+then trigger automatically, or be invoked explicitly with `$media-preview`.
 
 The skill triggers on its own after the agent generates or exports media, or when you ask for a preview, a screening, or to review a take.
 
@@ -38,7 +51,7 @@ The skill triggers on its own after the agent generates or exports media, or whe
 - Node.js 18+
 - `ffmpeg` / `ffprobe` — optional. Without them you still get playback and file sizes, but no duration, resolution, or loudness
 
-## Usage outside Claude Code
+## Standalone usage
 
 The script is a standalone CLI with no dependencies:
 
