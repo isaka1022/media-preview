@@ -1,6 +1,6 @@
 ---
 name: media-preview
-description: Turn generated video, audio, and image sets into a local screening page with a scoped review brief, timecoded notes, OK/Retake/Hold verdicts, and automated media QC. Use after generating or exporting media, or when asked for a preview, screening, take review, 「プレビュー見せて」, or 「試写」. Do not use for a single still image or when the user only wants its path.
+description: Turn generated video, audio, and image sets into a local screening page with a scoped review brief, timecoded notes, OK/Retake/Hold verdicts, and automated media QC. Use when comparing multiple takes, when OK/Retake/Hold verdicts need to be recorded, or when asked for a preview page, screening, take review, 「プレビュー見せて」, or 「試写」. Do not use just because media was generated or exported; for a quick check, open the file in the OS viewer instead. Do not use for a single still image or when the user only wants its path.
 allowed-tools: Bash, Read
 ---
 

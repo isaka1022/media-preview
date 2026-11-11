@@ -44,7 +44,7 @@ $skill-installer install https://github.com/isaka1022/media-preview/tree/main/sk
 Restart Codex after installation so the new skill is discovered. The skill can
 then trigger automatically, or be invoked explicitly with `$media-preview`.
 
-The skill triggers on its own after the agent generates or exports media, or when you ask for a preview, a screening, or to review a take.
+The skill triggers when you compare takes, need verdicts recorded, or ask for a preview, a screening, or to review a take. It does not trigger just because media was generated; for a quick check, the agent opens the file directly.
 
 ## Requirements
 
